@@ -16,42 +16,53 @@ import { AppButton } from "../components/AppButton";
 import { AppInput } from "../components/AppInput";
 import { colors, radius, spacing } from "../constants/theme";
 
+import { ApiError } from "../services/api";
+import { login } from "../services/auth";
+
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
   const handleLogin = async () => {
-    setFormError("");
+    const normalizedUsername = username.trim();
 
-    if (!username.trim()) {
-      setFormError("Username wajib diisi.");
+    if (!normalizedUsername) {
+      setErrorMessage("Username wajib diisi.");
+
       return;
     }
 
-    if (!password.trim()) {
-      setFormError("Password wajib diisi.");
+    if (!password) {
+      setErrorMessage("Password wajib diisi.");
+
       return;
     }
 
-    setLoading(true);
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
 
-    await new Promise((resolve) => setTimeout(resolve, 700));
+      await login(normalizedUsername, password);
 
-    const usernameValid = username.trim().toLowerCase() === "pengawas";
-    const passwordValid = password === "123456";
+      router.replace("/(tabs)" as Href);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.message);
 
-    if (!usernameValid || !passwordValid) {
-      setLoading(false);
-      setFormError("Username atau password tidak sesuai.");
-      return;
+        return;
+      }
+
+      setErrorMessage("Terjadi kesalahan. Silakan coba kembali.");
+    } finally {
+      setIsLoading(false);
     }
-
-    setLoading(false);
-    router.replace("/(tabs)" as Href);
   };
 
   return (
@@ -87,26 +98,45 @@ export default function LoginScreen() {
             </Text>
 
             <AppInput
-              autoCapitalize="none"
-              autoCorrect={false}
               icon="person-outline"
               label="Username"
-              onChangeText={setUsername}
+              onChangeText={(value) => {
+                setUsername(value);
+
+                if (errorMessage) {
+                  setErrorMessage("");
+                }
+              }}
               placeholder="Masukkan username"
-              returnKeyType="next"
               value={username}
             />
 
             <AppInput
               icon="lock-closed-outline"
-              isPassword
               label="Password"
-              onChangeText={setPassword}
-              onSubmitEditing={handleLogin}
+              onChangeText={(value) => {
+                setPassword(value);
+
+                if (errorMessage) {
+                  setErrorMessage("");
+                }
+              }}
               placeholder="Masukkan password"
-              returnKeyType="done"
+              secureTextEntry
               value={password}
             />
+
+            {errorMessage ? (
+              <View style={styles.errorCard}>
+                <Ionicons
+                  color={colors.danger}
+                  name="alert-circle-outline"
+                  size={20}
+                />
+
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
 
             {formError ? (
               <View style={styles.errorContainer}>
@@ -122,16 +152,9 @@ export default function LoginScreen() {
 
             <AppButton
               icon="log-in-outline"
-              loading={loading}
               onPress={handleLogin}
-              title="Masuk"
+              title={isLoading ? "Memproses..." : "Masuk"}
             />
-
-            <View style={styles.demoContainer}>
-              <Text style={styles.demoTitle}>Akun sementara</Text>
-              <Text style={styles.demoText}>Username: pengawas</Text>
-              <Text style={styles.demoText}>Password: 123456</Text>
-            </View>
           </View>
 
           <Text style={styles.footer}>Aplikasi e-Time Sheet Alat</Text>
@@ -180,6 +203,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: spacing.xs,
   },
+  errorCard: {
+    alignItems: "center",
+    backgroundColor: "#FFF1F1",
+    borderColor: "#F8D3D3",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+
+  errorText: {
+    color: colors.danger,
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    marginLeft: spacing.sm,
+  },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -216,12 +257,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: spacing.lg,
     padding: spacing.md,
-  },
-  errorText: {
-    color: colors.danger,
-    flex: 1,
-    fontSize: 13,
-    marginLeft: spacing.sm,
   },
   demoContainer: {
     alignItems: "center",

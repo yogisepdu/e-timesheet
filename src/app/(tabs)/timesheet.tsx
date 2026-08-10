@@ -1,7 +1,10 @@
 import DateTimePicker from "@expo/ui/community/datetime-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { type ComponentProps, useMemo, useState } from "react";
+import type { Href } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { type ComponentProps, useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -19,17 +22,33 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppButton } from "../../components/AppButton";
 import { AppInput } from "../../components/AppInput";
 import { colors, radius, spacing } from "../../constants/theme";
+import { ApiError, removeToken } from "../../services/api";
+import { type AuthUser, getAuthenticatedUser } from "../../services/auth";
+import {
+  getMasterData,
+  type MasterData,
+  type ProductionUnit,
+} from "../../services/master-data";
+import {
+  createAndSubmitTimeSheet,
+  createTimeSheetDraft,
+  submitTimeSheetDraft,
+  type TimeSheetSavePayload,
+  updateTimeSheetDraft,
+} from "../../services/time-sheets";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
-type ProductionUnit = "Meter" | "m³" | "Ha";
 
 type TimeSheetForm = {
   date: string;
-  contractor: string;
 
+  contractorId: string;
+
+  operatorId: string;
   operatorCode: string;
   operatorName: string;
 
+  equipmentUnitId: string;
   unitCode: string;
   equipmentType: string;
 
@@ -41,7 +60,9 @@ type TimeSheetForm = {
   fuel: string;
 
   location: string;
-  activity: string;
+
+  activityId: string;
+  activityName: string;
 
   production: string;
   productionUnit: ProductionUnit;
@@ -55,170 +76,29 @@ type SelectOption = {
   icon?: IconName;
 };
 
-type Operator = {
-  code: string;
-  name: string;
-};
-
-type EquipmentUnit = {
-  code: string;
-  equipmentType: string;
-};
-
 type SubmitModalState = "closed" | "confirm" | "draft" | "success";
 
-/**
- * Master data sementara.
- *
- * Setelah backend Laravel dibuat, data operator, unit alat,
- * kontraktor, dan kegiatan akan diambil dari REST API.
- */
-const OPERATORS: Operator[] = [
-  {
-    code: "OP001",
-    name: "Wak Heri",
-  },
-  {
-    code: "OP002",
-    name: "Budi Santoso",
-  },
-  {
-    code: "OP003",
-    name: "Andi Saputra",
-  },
-  {
-    code: "OP004",
-    name: "Rahmat Hidayat",
-  },
-  {
-    code: "OP005",
-    name: "M. Ridwan",
-  },
-];
+function getTodayDateString() {
+  const date = new Date();
 
-const EQUIPMENT_UNITS: EquipmentUnit[] = [
-  {
-    code: "SPD16",
-    equipmentType: "SK75",
-  },
-  {
-    code: "EXC-001",
-    equipmentType: "Excavator Komatsu PC200",
-  },
-  {
-    code: "EXC-002",
-    equipmentType: "Excavator Hitachi ZX200",
-  },
-  {
-    code: "DZ-003",
-    equipmentType: "Bulldozer Komatsu D85",
-  },
-  {
-    code: "DT-012",
-    equipmentType: "Dump Truck Hino 500",
-  },
-  {
-    code: "GD-002",
-    equipmentType: "Motor Grader Komatsu GD535",
-  },
-  {
-    code: "WL-004",
-    equipmentType: "Wheel Loader WA200",
-  },
-];
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
-const CONTRACTOR_OPTIONS: SelectOption[] = [
-  {
-    value: "internal",
-    label: "Internal",
-    description: "Tenaga kerja dan unit milik perusahaan",
-    icon: "business-outline",
-  },
-  {
-    value: "external",
-    label: "External",
-    description: "Tenaga kerja atau unit milik kontraktor",
-    icon: "briefcase-outline",
-  },
-];
-
-const ACTIVITY_OPTIONS: SelectOption[] = [
-  {
-    value: "mch-s-shaving",
-    label: "MCH S. Shaving",
-    icon: "leaf-outline",
-  },
-  {
-    value: "land-clearing",
-    label: "Land Clearing",
-    icon: "earth-outline",
-  },
-  {
-    value: "chipping",
-    label: "Chipping",
-    icon: "cut-outline",
-  },
-  {
-    value: "hauling",
-    label: "Hauling",
-    icon: "car-outline",
-  },
-  {
-    value: "grading",
-    label: "Grading",
-    icon: "trail-sign-outline",
-  },
-  {
-    value: "excavation",
-    label: "Excavation",
-    icon: "construct-outline",
-  },
-  {
-    value: "road-maintenance",
-    label: "Road Maintenance",
-    icon: "build-outline",
-  },
-  {
-    value: "loading-material",
-    label: "Loading Material",
-    icon: "arrow-up-circle-outline",
-  },
-  {
-    value: "unloading-material",
-    label: "Unloading Material",
-    icon: "arrow-down-circle-outline",
-  },
-  {
-    value: "pembuatan-parit",
-    label: "Pembuatan Parit",
-    icon: "git-branch-outline",
-  },
-];
-
-const OPERATOR_OPTIONS: SelectOption[] = OPERATORS.map((operator) => ({
-  value: operator.code,
-  label: `${operator.code} - ${operator.name}`,
-  description: "Operator alat",
-  searchText: `${operator.code} ${operator.name}`,
-  icon: "person-circle-outline",
-}));
-
-const UNIT_OPTIONS: SelectOption[] = EQUIPMENT_UNITS.map((unit) => ({
-  value: unit.code,
-  label: `${unit.code} - ${unit.equipmentType}`,
-  description: `Kode unit: ${unit.code}`,
-  searchText: `${unit.code} ${unit.equipmentType}`,
-  icon: "construct-outline",
-}));
+  return `${year}-${month}-${day}`;
+}
 
 function createInitialForm(): TimeSheetForm {
   return {
-    date: new Intl.DateTimeFormat("id-ID").format(new Date()),
-    contractor: "",
+    date: getTodayDateString(),
 
+    contractorId: "",
+
+    operatorId: "",
     operatorCode: "",
     operatorName: "",
 
+    equipmentUnitId: "",
     unitCode: "",
     equipmentType: "",
 
@@ -230,7 +110,9 @@ function createInitialForm(): TimeSheetForm {
     fuel: "",
 
     location: "",
-    activity: "",
+
+    activityId: "",
+    activityName: "",
 
     production: "",
     productionUnit: "Ha",
@@ -311,6 +193,55 @@ function dateToTimeString(date: Date) {
   const minute = String(date.getMinutes()).padStart(2, "0");
 
   return `${hour}:${minute}`;
+}
+
+function dateStringToDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) {
+    return new Date();
+  }
+
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+
+  date.setHours(0, 0, 0, 0);
+
+  return date;
+}
+
+function dateToDateString(date: Date) {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateLabel(value: string) {
+  const date = dateStringToDate(value);
+
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function nullableDecimal(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = parseDecimal(normalized);
+
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 type SelectFieldProps = {
@@ -660,6 +591,68 @@ function TimePickerField({
   );
 }
 
+type DatePickerFieldProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function DatePickerField({ label, value, onChange }: DatePickerFieldProps) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const pickerValue = useMemo(() => {
+    return dateStringToDate(value);
+  }, [value]);
+
+  return (
+    <View style={styles.datePickerWrapper}>
+      <Text style={styles.datePickerLabel}>{label}</Text>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setShowPicker(true)}
+        style={({ pressed }) => [
+          styles.datePickerButton,
+          pressed ? styles.datePickerButtonPressed : null,
+        ]}
+      >
+        <View style={styles.datePickerIcon}>
+          <Ionicons color={colors.primary} name="calendar-outline" size={21} />
+        </View>
+
+        <View style={styles.datePickerTextContainer}>
+          <Text style={styles.datePickerValue}>{formatDateLabel(value)}</Text>
+
+          <Text style={styles.datePickerDescription}>
+            Tekan untuk mengubah tanggal
+          </Text>
+        </View>
+
+        <Ionicons
+          color={colors.textSecondary}
+          name="chevron-forward-outline"
+          size={20}
+        />
+      </Pressable>
+
+      {showPicker ? (
+        <DateTimePicker
+          accentColor={colors.primary}
+          display="calendar"
+          mode="date"
+          onDismiss={() => setShowPicker(false)}
+          onValueChange={(_event, selectedDate) => {
+            setShowPicker(false);
+            onChange(dateToDateString(selectedDate));
+          }}
+          presentation="dialog"
+          value={pickerValue}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 type SubmitTimeSheetModalProps = {
   visible: boolean;
   mode: Exclude<SubmitModalState, "closed">;
@@ -905,8 +898,25 @@ function SubmitTimeSheetModal({
 }
 
 export default function TimeSheetScreen() {
+  const router = useRouter();
+
   const [form, setForm] = useState<TimeSheetForm>(createInitialForm());
+
+  const [masterData, setMasterData] = useState<MasterData | null>(null);
+
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  const [currentTimeSheetId, setCurrentTimeSheetId] = useState<number | null>(
+    null,
+  );
+
+  const [currentTimeSheetCode, setCurrentTimeSheetCode] = useState("");
+
   const [submitModal, setSubmitModal] = useState<SubmitModalState>("closed");
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const updateField = <K extends keyof TimeSheetForm>(
     field: K,
@@ -917,6 +927,134 @@ export default function TimeSheetScreen() {
       [field]: value,
     }));
   };
+
+  const loadScreenData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setLoadError("");
+
+      const [authenticatedUser, loadedMasterData] = await Promise.all([
+        getAuthenticatedUser(),
+        getMasterData(),
+      ]);
+
+      setUser(authenticatedUser);
+      setMasterData(loadedMasterData);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          await removeToken();
+          router.replace("/login" as Href);
+
+          return;
+        }
+
+        setLoadError(error.message);
+
+        return;
+      }
+
+      setLoadError(
+        "Data form tidak dapat dimuat. Periksa koneksi ke server lalu coba kembali.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadScreenData();
+    }, [loadScreenData]),
+  );
+
+  const contractorOptions = useMemo<SelectOption[]>(() => {
+    if (!masterData) {
+      return [];
+    }
+
+    return masterData.contractors.map((contractor) => ({
+      value: String(contractor.id),
+      label: contractor.name,
+      description: `${contractor.code} • ${
+        contractor.type === "internal" ? "Internal" : "External"
+      }`,
+      searchText: `${contractor.code} ${contractor.name} ${contractor.type}`,
+      icon:
+        contractor.type === "internal"
+          ? "business-outline"
+          : "briefcase-outline",
+    }));
+  }, [masterData]);
+
+  const operatorOptions = useMemo<SelectOption[]>(() => {
+    if (!masterData || !form.contractorId) {
+      return [];
+    }
+
+    const contractorId = Number(form.contractorId);
+
+    return masterData.operators
+      .filter((operator) => {
+        return (
+          operator.contractor_id === null ||
+          operator.contractor_id === contractorId
+        );
+      })
+      .map((operator) => ({
+        value: String(operator.id),
+        label: `${operator.code} - ${operator.name}`,
+        description: operator.contractor?.name ?? "Operator alat",
+        searchText: `${operator.code} ${operator.name} ${
+          operator.contractor?.name ?? ""
+        }`,
+        icon: "person-circle-outline",
+      }));
+  }, [form.contractorId, masterData]);
+
+  const unitOptions = useMemo<SelectOption[]>(() => {
+    if (!masterData || !form.contractorId) {
+      return [];
+    }
+
+    const contractorId = Number(form.contractorId);
+
+    return masterData.equipment_units
+      .filter((unit) => {
+        return (
+          unit.contractor_id === null || unit.contractor_id === contractorId
+        );
+      })
+      .map((unit) => ({
+        value: String(unit.id),
+        label: `${unit.code} - ${unit.equipment_type}`,
+        description: unit.contractor?.name ?? `Kode unit: ${unit.code}`,
+        searchText: `${unit.code} ${unit.equipment_type} ${
+          unit.brand ?? ""
+        } ${unit.model ?? ""}`,
+        icon: "construct-outline",
+      }));
+  }, [form.contractorId, masterData]);
+
+  const activityOptions = useMemo<SelectOption[]>(() => {
+    if (!masterData) {
+      return [];
+    }
+
+    return masterData.activities.map((activity) => ({
+      value: String(activity.id),
+      label: activity.name,
+      description: activity.default_production_unit
+        ? `Satuan default: ${activity.default_production_unit}`
+        : undefined,
+      searchText: `${activity.code} ${activity.name}`,
+      icon: "layers-outline",
+    }));
+  }, [masterData]);
+
+  const productionUnits = useMemo(() => {
+    return masterData?.production_units.map((item) => item.value) ?? [];
+  }, [masterData]);
 
   const totalHm = useMemo(() => {
     const start = parseDecimal(form.hmStart);
@@ -956,9 +1094,24 @@ export default function TimeSheetScreen() {
     return "";
   }, [form.hmEnd, form.hmStart]);
 
+  const handleContractorSelect = (option: SelectOption) => {
+    setForm((previous) => ({
+      ...previous,
+      contractorId: option.value,
+
+      operatorId: "",
+      operatorCode: "",
+      operatorName: "",
+
+      equipmentUnitId: "",
+      unitCode: "",
+      equipmentType: "",
+    }));
+  };
+
   const handleOperatorSelect = (option: SelectOption) => {
-    const selectedOperator = OPERATORS.find((operator) => {
-      return operator.code === option.value;
+    const selectedOperator = masterData?.operators.find((operator) => {
+      return String(operator.id) === option.value;
     });
 
     if (!selectedOperator) {
@@ -967,14 +1120,15 @@ export default function TimeSheetScreen() {
 
     setForm((previous) => ({
       ...previous,
+      operatorId: String(selectedOperator.id),
       operatorCode: selectedOperator.code,
       operatorName: selectedOperator.name,
     }));
   };
 
   const handleUnitSelect = (option: SelectOption) => {
-    const selectedUnit = EQUIPMENT_UNITS.find((unit) => {
-      return unit.code === option.value;
+    const selectedUnit = masterData?.equipment_units.find((unit) => {
+      return String(unit.id) === option.value;
     });
 
     if (!selectedUnit) {
@@ -983,69 +1137,78 @@ export default function TimeSheetScreen() {
 
     setForm((previous) => ({
       ...previous,
+      equipmentUnitId: String(selectedUnit.id),
       unitCode: selectedUnit.code,
-      equipmentType: selectedUnit.equipmentType,
+      equipmentType: selectedUnit.equipment_type,
+    }));
+  };
+
+  const handleActivitySelect = (option: SelectOption) => {
+    const selectedActivity = masterData?.activities.find((activity) => {
+      return String(activity.id) === option.value;
+    });
+
+    if (!selectedActivity) {
+      return;
+    }
+
+    setForm((previous) => ({
+      ...previous,
+      activityId: String(selectedActivity.id),
+      activityName: selectedActivity.name,
+      productionUnit:
+        selectedActivity.default_production_unit ?? previous.productionUnit,
     }));
   };
 
   const validateForm = () => {
     const requiredFields: Array<{
-      key: keyof TimeSheetForm;
+      value: string;
       label: string;
     }> = [
       {
-        key: "date",
+        value: form.date,
         label: "Tanggal",
       },
       {
-        key: "contractor",
+        value: form.contractorId,
         label: "Kontraktor",
       },
       {
-        key: "operatorCode",
+        value: form.operatorId,
         label: "Operator",
       },
       {
-        key: "operatorName",
-        label: "Nama operator",
+        value: form.equipmentUnitId,
+        label: "Unit alat",
       },
       {
-        key: "unitCode",
-        label: "Kode unit",
-      },
-      {
-        key: "equipmentType",
-        label: "Jenis alat",
-      },
-      {
-        key: "startTime",
+        value: form.startTime,
         label: "Jam mulai",
       },
       {
-        key: "endTime",
+        value: form.endTime,
         label: "Jam selesai",
       },
       {
-        key: "hmStart",
+        value: form.hmStart,
         label: "HM awal",
       },
       {
-        key: "hmEnd",
+        value: form.hmEnd,
         label: "HM akhir",
       },
       {
-        key: "location",
+        value: form.location,
         label: "Lokasi",
       },
       {
-        key: "activity",
+        value: form.activityId,
         label: "Kegiatan",
       },
     ];
 
-    const missingField = requiredFields.find(({ key }) => {
-      return !String(form[key]).trim();
-    });
+    const missingField = requiredFields.find(({ value }) => !value.trim());
 
     if (missingField) {
       Alert.alert("Data belum lengkap", `${missingField.label} wajib diisi.`);
@@ -1080,16 +1243,142 @@ export default function TimeSheetScreen() {
       return false;
     }
 
+    if (
+      form.fuel &&
+      (nullableDecimal(form.fuel) === null ||
+        (nullableDecimal(form.fuel) ?? 0) < 0)
+    ) {
+      Alert.alert(
+        "BBM tidak sesuai",
+        "BBM terpakai harus berupa angka 0 atau lebih.",
+      );
+
+      return false;
+    }
+
+    if (
+      form.production &&
+      (nullableDecimal(form.production) === null ||
+        (nullableDecimal(form.production) ?? 0) < 0)
+    ) {
+      Alert.alert(
+        "Produksi tidak sesuai",
+        "Jumlah produksi harus berupa angka 0 atau lebih.",
+      );
+
+      return false;
+    }
+
+    if (form.production && !form.productionUnit) {
+      Alert.alert(
+        "Satuan produksi belum dipilih",
+        "Pilih satuan produksi terlebih dahulu.",
+      );
+
+      return false;
+    }
+
     return true;
   };
 
-  const handleSaveDraft = () => {
-    /**
-     * Tahap sementara:
-     * nantinya bagian ini diganti dengan penyimpanan draft
-     * melalui API Laravel / penyimpanan lokal.
-     */
-    setSubmitModal("draft");
+  const hasDraftContent = () => {
+    return Boolean(
+      form.contractorId ||
+      form.operatorId ||
+      form.equipmentUnitId ||
+      form.startTime ||
+      form.endTime ||
+      form.hmStart ||
+      form.hmEnd ||
+      form.fuel ||
+      form.location.trim() ||
+      form.activityId ||
+      form.production,
+    );
+  };
+
+  const buildPayload = (): TimeSheetSavePayload => {
+    return {
+      work_date: form.date || null,
+
+      contractor_id: form.contractorId ? Number(form.contractorId) : null,
+
+      operator_id: form.operatorId ? Number(form.operatorId) : null,
+
+      equipment_unit_id: form.equipmentUnitId
+        ? Number(form.equipmentUnitId)
+        : null,
+
+      activity_id: form.activityId ? Number(form.activityId) : null,
+
+      start_time: form.startTime || null,
+      end_time: form.endTime || null,
+
+      hm_start: nullableDecimal(form.hmStart),
+      hm_end: nullableDecimal(form.hmEnd),
+
+      fuel_used: nullableDecimal(form.fuel),
+
+      location: form.location.trim() || null,
+
+      production: nullableDecimal(form.production),
+
+      production_unit: form.productionUnit || null,
+    };
+  };
+
+  const handleApiError = async (error: unknown, fallbackMessage: string) => {
+    if (error instanceof ApiError) {
+      if (error.status === 401) {
+        await removeToken();
+        router.replace("/login" as Href);
+
+        return;
+      }
+
+      Alert.alert("Proses gagal", error.message);
+
+      return;
+    }
+
+    Alert.alert("Proses gagal", fallbackMessage);
+  };
+
+  const handleSaveDraft = async () => {
+    if (isSaving) {
+      return;
+    }
+
+    if (!hasDraftContent()) {
+      Alert.alert(
+        "Belum ada data",
+        "Isi minimal salah satu data Time Sheet sebelum menyimpan draft.",
+      );
+
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const payload = buildPayload();
+
+      const response = currentTimeSheetId
+        ? await updateTimeSheetDraft(currentTimeSheetId, payload)
+        : await createTimeSheetDraft(payload);
+
+      setCurrentTimeSheetId(response.data.id);
+      setCurrentTimeSheetCode(response.data.code);
+
+      setSubmitModal("draft");
+    } catch (error) {
+      await handleApiError(
+        error,
+        "Draft tidak dapat disimpan. Silakan coba kembali.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -1100,21 +1389,107 @@ export default function TimeSheetScreen() {
     setSubmitModal("confirm");
   };
 
-  const handleConfirmSubmit = () => {
-    /**
-     * Tahap sementara:
-     * nantinya bagian ini diganti dengan request API Laravel.
-     */
-    setSubmitModal("success");
+  const handleConfirmSubmit = async () => {
+    if (isSaving) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const payload = buildPayload();
+
+      const response = currentTimeSheetId
+        ? await submitTimeSheetDraft(currentTimeSheetId, payload)
+        : await createAndSubmitTimeSheet(payload);
+
+      setCurrentTimeSheetId(response.data.id);
+      setCurrentTimeSheetCode(response.data.code);
+
+      setSubmitModal("success");
+    } catch (error) {
+      setSubmitModal("closed");
+
+      await handleApiError(
+        error,
+        "Time Sheet tidak dapat dikirim. Silakan coba kembali.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCloseSubmitModal = () => {
+    if (isSaving) {
+      return;
+    }
+
     if (submitModal === "success") {
       setForm(createInitialForm());
+      setCurrentTimeSheetId(null);
+      setCurrentTimeSheetCode("");
     }
 
     setSubmitModal("closed");
   };
+
+  if (isLoading && !masterData) {
+    return (
+      <SafeAreaView edges={["top"]} style={styles.safeArea}>
+        <View style={styles.screenLoadingContainer}>
+          <View style={styles.screenLoadingIcon}>
+            <ActivityIndicator color={colors.primary} size="large" />
+          </View>
+
+          <Text style={styles.screenLoadingTitle}>
+            Menyiapkan Form Time Sheet
+          </Text>
+
+          <Text style={styles.screenLoadingText}>
+            Mengambil data Pengawas, Kontraktor, Operator, Unit Alat, dan
+            Kegiatan dari server...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!masterData) {
+    return (
+      <SafeAreaView edges={["top"]} style={styles.safeArea}>
+        <View style={styles.loadErrorContainer}>
+          <View style={styles.loadErrorIcon}>
+            <Ionicons
+              color={colors.danger}
+              name="cloud-offline-outline"
+              size={30}
+            />
+          </View>
+
+          <Text style={styles.loadErrorTitle}>Data form gagal dimuat</Text>
+
+          <Text style={styles.loadErrorText}>
+            {loadError || "Tidak dapat mengambil master data dari server."}
+          </Text>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              void loadScreenData();
+            }}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed ? styles.submitModalButtonPressed : null,
+            ]}
+          >
+            <Ionicons color={colors.white} name="refresh-outline" size={18} />
+
+            <Text style={styles.retryButtonText}>Coba Lagi</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -1142,45 +1517,85 @@ export default function TimeSheetScreen() {
               size={22}
             />
 
-            <Text style={styles.infoText}>
-              Nama pengawas diambil otomatis dari akun yang sedang login:
-              Pengawas Lapangan.
-            </Text>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoText}>
+                Nama pengawas diambil otomatis dari akun yang sedang login:{" "}
+                <Text style={styles.infoTextStrong}>{user?.name ?? "-"}</Text>.
+              </Text>
+
+              {currentTimeSheetCode ? (
+                <View style={styles.draftCodeRow}>
+                  <Ionicons
+                    color={colors.primary}
+                    name="document-text-outline"
+                    size={15}
+                  />
+                  <Text style={styles.draftCodeText}>
+                    Draft aktif: {currentTimeSheetCode}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
+
+          {loadError ? (
+            <Pressable
+              onPress={() => {
+                void loadScreenData();
+              }}
+              style={styles.inlineWarning}
+            >
+              <Ionicons
+                color={colors.warning}
+                name="warning-outline"
+                size={18}
+              />
+
+              <Text style={styles.inlineWarningText}>{loadError}</Text>
+
+              <Ionicons
+                color={colors.warning}
+                name="refresh-outline"
+                size={18}
+              />
+            </Pressable>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Identitas Laporan</Text>
 
-            <AppInput
-              icon="calendar-outline"
+            <DatePickerField
               label="Hari/Tanggal"
-              onChangeText={(value) => {
+              onChange={(value) => {
                 updateField("date", value);
               }}
-              placeholder="05/08/2026"
               value={form.date}
             />
 
             <SelectField
               icon="business-outline"
               label="Kontraktor"
-              onSelect={(option) => {
-                updateField("contractor", option.value);
-              }}
-              options={CONTRACTOR_OPTIONS}
-              placeholder="Pilih Internal atau External"
-              value={form.contractor}
+              onSelect={handleContractorSelect}
+              options={contractorOptions}
+              placeholder="Pilih kontraktor"
+              searchable
+              searchPlaceholder="Cari kode atau nama kontraktor..."
+              value={form.contractorId}
             />
 
             <SelectField
               icon="person-circle-outline"
               label="Pilih Operator"
               onSelect={handleOperatorSelect}
-              options={OPERATOR_OPTIONS}
-              placeholder="Cari kode atau nama operator"
+              options={operatorOptions}
+              placeholder={
+                form.contractorId
+                  ? "Cari kode atau nama operator"
+                  : "Pilih kontraktor terlebih dahulu"
+              }
               searchable
               searchPlaceholder="Cari kode atau nama operator..."
-              value={form.operatorCode}
+              value={form.operatorId}
             />
 
             <View style={styles.row}>
@@ -1207,11 +1622,15 @@ export default function TimeSheetScreen() {
               icon="construct-outline"
               label="Pilih Unit Alat"
               onSelect={handleUnitSelect}
-              options={UNIT_OPTIONS}
-              placeholder="Cari kode unit atau jenis alat"
+              options={unitOptions}
+              placeholder={
+                form.contractorId
+                  ? "Cari kode unit atau jenis alat"
+                  : "Pilih kontraktor terlebih dahulu"
+              }
               searchable
               searchPlaceholder="Cari kode unit atau jenis alat..."
-              value={form.unitCode}
+              value={form.equipmentUnitId}
             />
 
             <View style={styles.row}>
@@ -1337,14 +1756,12 @@ export default function TimeSheetScreen() {
             <SelectField
               icon="layers-outline"
               label="Kegiatan"
-              onSelect={(option) => {
-                updateField("activity", option.value);
-              }}
-              options={ACTIVITY_OPTIONS}
+              onSelect={handleActivitySelect}
+              options={activityOptions}
               placeholder="Pilih kegiatan alat"
               searchable
               searchPlaceholder="Cari kegiatan..."
-              value={form.activity}
+              value={form.activityId}
             />
 
             <AppInput
@@ -1361,7 +1778,7 @@ export default function TimeSheetScreen() {
             <Text style={styles.unitLabel}>Satuan Produksi</Text>
 
             <View style={styles.unitContainer}>
-              {(["Meter", "m³", "Ha"] as ProductionUnit[]).map((unit) => {
+              {productionUnits.map((unit) => {
                 const selected = form.productionUnit === unit;
 
                 return (
@@ -1392,9 +1809,17 @@ export default function TimeSheetScreen() {
           <View style={styles.actionRow}>
             <AppButton
               icon="save-outline"
-              onPress={handleSaveDraft}
+              onPress={() => {
+                void handleSaveDraft();
+              }}
               style={styles.actionButton}
-              title="Simpan Draft"
+              title={
+                isSaving
+                  ? "Memproses..."
+                  : currentTimeSheetId
+                    ? "Perbarui Draft"
+                    : "Simpan Draft"
+              }
               variant="outline"
             />
 
@@ -1418,7 +1843,9 @@ export default function TimeSheetScreen() {
               : "confirm"
         }
         onClose={handleCloseSubmitModal}
-        onConfirm={handleConfirmSubmit}
+        onConfirm={() => {
+          void handleConfirmSubmit();
+        }}
         visible={submitModal !== "closed"}
       />
     </SafeAreaView>
@@ -1498,6 +1925,164 @@ const styles = StyleSheet.create({
   },
   unitTypeColumn: {
     flex: 1.4,
+  },
+
+  screenLoadingContainer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  screenLoadingIcon: {
+    alignItems: "center",
+    backgroundColor: "#EAF0F5",
+    borderRadius: radius.round,
+    height: 84,
+    justifyContent: "center",
+    width: 84,
+  },
+  screenLoadingTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: spacing.lg,
+    textAlign: "center",
+  },
+  screenLoadingText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+    maxWidth: 310,
+    textAlign: "center",
+  },
+  loadErrorContainer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  loadErrorIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFF1F1",
+    borderRadius: radius.round,
+    height: 78,
+    justifyContent: "center",
+    width: 78,
+  },
+  loadErrorTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: spacing.lg,
+  },
+  loadErrorText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+    maxWidth: 310,
+    textAlign: "center",
+  },
+  retryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "center",
+    marginTop: spacing.lg,
+    minHeight: 48,
+    paddingHorizontal: spacing.xl,
+  },
+  retryButtonText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoTextStrong: {
+    fontWeight: "800",
+  },
+  draftCodeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginLeft: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  draftCodeText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "800",
+    marginLeft: 6,
+  },
+  inlineWarning: {
+    alignItems: "center",
+    backgroundColor: "#FFF8EC",
+    borderColor: "#F5DFC0",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+  },
+  inlineWarningText: {
+    color: "#7A5B2A",
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    marginHorizontal: spacing.sm,
+  },
+
+  /*
+   * Date picker
+   */
+  datePickerWrapper: {
+    marginBottom: spacing.lg,
+  },
+  datePickerLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: spacing.sm,
+  },
+  datePickerButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 62,
+    paddingHorizontal: spacing.sm,
+  },
+  datePickerButtonPressed: {
+    backgroundColor: "#F7F9FB",
+    borderColor: colors.primary,
+  },
+  datePickerIcon: {
+    alignItems: "center",
+    backgroundColor: "#EAF0F5",
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: "center",
+    marginRight: spacing.sm,
+    width: 40,
+  },
+  datePickerTextContainer: {
+    flex: 1,
+  },
+  datePickerValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  datePickerDescription: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    marginTop: 3,
   },
 
   /*
