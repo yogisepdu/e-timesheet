@@ -485,7 +485,8 @@ export default function HistoryScreen() {
                 </View>
               </View>
 
-              {item.status === "revision" && item.review_notes ? (
+              {(item.status === "revision" || item.status === "rejected") &&
+              item.review_notes ? (
                 <View style={styles.revisionNote}>
                   <Ionicons
                     color={colors.danger}
@@ -494,7 +495,12 @@ export default function HistoryScreen() {
                   />
 
                   <View style={styles.revisionContent}>
-                    <Text style={styles.revisionLabel}>Catatan Perbaikan</Text>
+                    <Text style={styles.revisionLabel}>
+                      {item.status === "rejected"
+                        ? "Alasan Penolakan"
+                        : "Catatan Perbaikan"}
+                    </Text>
+
                     <Text style={styles.revisionText}>{item.review_notes}</Text>
                   </View>
                 </View>
