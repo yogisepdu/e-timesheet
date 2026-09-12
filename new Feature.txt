@@ -1,0 +1,3 @@
+Ketika user mau melakukan input data di lapangan dan tidak mendapatkan sinyal untuk mengambil data dari server, buat aplikasi nya untuk mengeload data aplikasi terlebih dahulu, seperti.. Ketika aplikasi di install, dan di buka, dia akan mengeload data dari server kemudian di simpan sebagai data offline, sehingga Ketika user sedang tidak memiliki sinyal, aplikasi akan menggunakan data offline nya tadi,
+
+kemudian, pada saat user selesai input data, dan terjadi kehilangan sinyal, buat seperti data draft, dan Ketika user sudah mendapatkan sinyal, barulah data dari draft tadi user kirimkan ke server...

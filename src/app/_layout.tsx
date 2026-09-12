@@ -1,9 +1,11 @@
 import { Stack } from "expo-router";
+import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useEffect } from "react";
 
 import { colors } from "../constants/theme";
+import { initializeDatabase } from "../services/offline/database";
 
 export default function RootLayout() {
   useEffect(() => {
@@ -15,8 +17,14 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <>
-      <StatusBar backgroundColor={colors.background} style="dark" />
+    <SQLiteProvider
+      databaseName="etimesheet.db"
+      onInit={initializeDatabase}
+      onError={(error) => {
+        console.error("SQLite initialization error:", error);
+      }}
+    >
+      <StatusBar style="dark" />
 
       <Stack
         screenOptions={{
@@ -30,6 +38,6 @@ export default function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
       </Stack>
-    </>
+    </SQLiteProvider>
   );
 }

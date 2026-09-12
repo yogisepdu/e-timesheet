@@ -1,9 +1,11 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { Href } from "expo-router";
 import { useFocusEffect, useRouter } from "expo-router";
+import * as Sharing from "expo-sharing";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -18,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radius, spacing } from "../../constants/theme";
 import { ApiError, removeToken } from "../../services/api";
 import {
+  downloadTimeSheetPdf,
   getTimeSheetHistory,
   type TimeSheetHistoryItem,
   type TimeSheetStatus,
@@ -39,24 +42,28 @@ const STATUS_CONFIG: Record<TimeSheetStatus, StatusAppearance> = {
     backgroundColor: "#EEF2F6",
     icon: "document-text-outline",
   },
+
   submitted: {
     label: "Menunggu Persetujuan",
     color: colors.warning,
     backgroundColor: "#FFF4E5",
     icon: "time-outline",
   },
+
   approved: {
     label: "Disetujui",
     color: colors.success,
     backgroundColor: "#E8F5E9",
     icon: "checkmark-circle-outline",
   },
+
   revision: {
     label: "Perlu Perbaikan",
     color: colors.danger,
     backgroundColor: "#FDECEC",
     icon: "create-outline",
   },
+
   rejected: {
     label: "Ditolak",
     color: colors.danger,
@@ -134,9 +141,19 @@ export default function HistoryScreen() {
   const [reports, setReports] = useState<TimeSheetHistoryItem[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState("");
+
+  /**
+   * Menyimpan ID Time Sheet yang sedang didownload.
+   *
+   * Dengan menggunakan ID, hanya tombol PDF dari item tersebut
+   * yang menampilkan loading.
+   */
+  const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
 
   const loadHistory = useCallback(
     async (refresh = false) => {
@@ -156,6 +173,7 @@ export default function HistoryScreen() {
         if (error instanceof ApiError) {
           if (error.status === 401) {
             await removeToken();
+
             router.replace("/login" as Href);
 
             return;
@@ -175,6 +193,87 @@ export default function HistoryScreen() {
       }
     },
     [router],
+  );
+
+  /**
+   * Download dan buka/share PDF Time Sheet.
+   */
+  const handleDownloadPdf = useCallback(
+    async (report: TimeSheetHistoryItem) => {
+      /**
+       * Jangan izinkan download PDF lain ketika masih ada
+       * proses download yang berjalan.
+       */
+      if (downloadingPdfId !== null) {
+        return;
+      }
+
+      try {
+        setDownloadingPdfId(report.id);
+        setErrorMessage("");
+
+        /**
+         * PDF dibuat oleh Laravel.
+         *
+         * Mobile hanya meminta file berdasarkan ID Time Sheet.
+         */
+        const fileUri = await downloadTimeSheetPdf(report.id, report.code);
+
+        /**
+         * Pastikan fitur sharing tersedia.
+         */
+        const sharingAvailable = await Sharing.isAvailableAsync();
+
+        if (!sharingAvailable) {
+          Alert.alert(
+            "PDF Berhasil Diunduh",
+            `PDF ${report.code} sudah tersedia di penyimpanan sementara aplikasi, tetapi perangkat ini tidak menyediakan fitur untuk membuka atau membagikan file tersebut.`,
+          );
+
+          return;
+        }
+
+        /**
+         * Buka dialog native Android/iOS.
+         *
+         * User bisa memilih:
+         * - PDF Reader
+         * - Google Drive
+         * - Files
+         * - WhatsApp
+         * - aplikasi PDF lainnya
+         */
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/pdf",
+          dialogTitle: `PDF ${report.code}`,
+          UTI: "com.adobe.pdf",
+        });
+      } catch (error) {
+        console.warn("Gagal download PDF Time Sheet:", error);
+
+        if (error instanceof ApiError) {
+          if (error.status === 401) {
+            await removeToken();
+
+            router.replace("/login" as Href);
+
+            return;
+          }
+
+          Alert.alert("Gagal Download PDF", error.message);
+
+          return;
+        }
+
+        Alert.alert(
+          "Gagal Download PDF",
+          "PDF tidak dapat diunduh. Silakan periksa koneksi internet dan coba lagi.",
+        );
+      } finally {
+        setDownloadingPdfId(null);
+      }
+    },
+    [downloadingPdfId, router],
   );
 
   useFocusEffect(
@@ -199,6 +298,9 @@ export default function HistoryScreen() {
 
   const header = (
     <View>
+      {/* =========================
+          HEADER
+      ========================== */}
       <View style={styles.header}>
         <Text style={styles.title}>Riwayat Time Sheet</Text>
 
@@ -207,6 +309,9 @@ export default function HistoryScreen() {
         </Text>
       </View>
 
+      {/* =========================
+          SUMMARY
+      ========================== */}
       <View style={styles.summaryCard}>
         <View style={styles.summaryIcon}>
           <Ionicons color={colors.primary} name="documents-outline" size={22} />
@@ -220,10 +325,14 @@ export default function HistoryScreen() {
 
         <View style={styles.summaryStatus}>
           <View style={styles.summaryDot} />
+
           <Text style={styles.summaryStatusText}>Tersinkron</Text>
         </View>
       </View>
 
+      {/* =========================
+          SEARCH
+      ========================== */}
       <View style={styles.searchBox}>
         <Ionicons
           color={colors.textSecondary}
@@ -252,6 +361,9 @@ export default function HistoryScreen() {
         ) : null}
       </View>
 
+      {/* =========================
+          FILTER STATUS
+      ========================== */}
       <ScrollView
         contentContainerStyle={styles.filterContent}
         horizontal
@@ -282,6 +394,9 @@ export default function HistoryScreen() {
         })}
       </ScrollView>
 
+      {/* =========================
+          ERROR
+      ========================== */}
       {errorMessage ? (
         <Pressable
           onPress={() => {
@@ -301,12 +416,22 @@ export default function HistoryScreen() {
         </Pressable>
       ) : null}
 
+      {/* =========================
+          LIST HEADING
+      ========================== */}
       <View style={styles.listHeading}>
         <Text style={styles.listTitle}>Daftar Laporan</Text>
+
         <Text style={styles.listCount}>{filteredReports.length} data</Text>
       </View>
     </View>
   );
+
+  {
+    /* =========================
+      INITIAL LOADING
+  ========================== */
+  }
 
   if (isLoading && reports.length === 0) {
     return (
@@ -380,8 +505,13 @@ export default function HistoryScreen() {
             ? `${item.equipment_unit.code} - ${item.equipment_unit.equipment_type}`
             : "-";
 
+          const isDownloadingPdf = downloadingPdfId === item.id;
+
           return (
             <View style={styles.reportCard}>
+              {/* =========================
+                  REPORT HEADER
+              ========================== */}
               <View style={styles.reportHeader}>
                 <View style={styles.reportHeaderContent}>
                   <Text style={styles.reportCode}>{item.code}</Text>
@@ -392,6 +522,7 @@ export default function HistoryScreen() {
                       name="calendar-outline"
                       size={14}
                     />
+
                     <Text style={styles.reportDate}>
                       {formatWorkDate(item.work_date)}
                     </Text>
@@ -423,6 +554,9 @@ export default function HistoryScreen() {
 
               <View style={styles.divider} />
 
+              {/* =========================
+                  OPERATOR
+              ========================== */}
               <View style={styles.detailRow}>
                 <View style={styles.detailIcon}>
                   <Ionicons
@@ -434,10 +568,14 @@ export default function HistoryScreen() {
 
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Operator</Text>
+
                   <Text style={styles.detailText}>{operatorLabel}</Text>
                 </View>
               </View>
 
+              {/* =========================
+                  EQUIPMENT
+              ========================== */}
               <View style={styles.detailRow}>
                 <View style={styles.detailIcon}>
                   <Ionicons
@@ -449,10 +587,14 @@ export default function HistoryScreen() {
 
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Unit Alat</Text>
+
                   <Text style={styles.detailText}>{unitLabel}</Text>
                 </View>
               </View>
 
+              {/* =========================
+                  ACTIVITY
+              ========================== */}
               <View style={styles.detailRow}>
                 <View style={styles.detailIcon}>
                   <Ionicons
@@ -464,12 +606,16 @@ export default function HistoryScreen() {
 
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Kegiatan</Text>
+
                   <Text style={styles.detailText}>
                     {item.activity?.name ?? "-"}
                   </Text>
                 </View>
               </View>
 
+              {/* =========================
+                  LOCATION
+              ========================== */}
               <View style={[styles.detailRow, styles.detailRowLast]}>
                 <View style={styles.detailIcon}>
                   <Ionicons
@@ -481,10 +627,14 @@ export default function HistoryScreen() {
 
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Lokasi</Text>
+
                   <Text style={styles.detailText}>{item.location || "-"}</Text>
                 </View>
               </View>
 
+              {/* =========================
+                  REVISION / REJECTED NOTE
+              ========================== */}
               {(item.status === "revision" || item.status === "rejected") &&
               item.review_notes ? (
                 <View style={styles.revisionNote}>
@@ -505,6 +655,38 @@ export default function HistoryScreen() {
                   </View>
                 </View>
               ) : null}
+
+              {/* =========================
+                  PDF ACTION
+              ========================== */}
+              <View style={styles.pdfAction}>
+                <Pressable
+                  accessibilityLabel={`Download PDF ${item.code}`}
+                  accessibilityRole="button"
+                  disabled={downloadingPdfId !== null}
+                  onPress={() => {
+                    void handleDownloadPdf(item);
+                  }}
+                  style={[
+                    styles.pdfButton,
+                    isDownloadingPdf ? styles.pdfButtonDisabled : null,
+                  ]}
+                >
+                  {isDownloadingPdf ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Ionicons
+                      color={colors.white}
+                      name="download-outline"
+                      size={18}
+                    />
+                  )}
+
+                  <Text style={styles.pdfButtonText}>
+                    {isDownloadingPdf ? "Menyiapkan PDF..." : "Download PDF"}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           );
         }}
@@ -519,19 +701,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1,
   },
+
   content: {
     flexGrow: 1,
     padding: spacing.lg,
     paddingBottom: spacing.xxxl,
   },
+
+  /*
+   * Header
+   */
   header: {
     marginBottom: spacing.lg,
   },
+
   title: {
     color: colors.text,
     fontSize: 25,
     fontWeight: "800",
   },
+
   subtitle: {
     color: colors.textSecondary,
     fontSize: 13,
@@ -548,6 +737,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.xl,
   },
+
   loadingIcon: {
     alignItems: "center",
     backgroundColor: "#EAF0F5",
@@ -556,12 +746,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 82,
   },
+
   loadingTitle: {
     color: colors.text,
     fontSize: 18,
     fontWeight: "800",
     marginTop: spacing.lg,
   },
+
   loadingText: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -582,6 +774,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     padding: spacing.md,
   },
+
   summaryIcon: {
     alignItems: "center",
     backgroundColor: "#EAF0F5",
@@ -591,19 +784,23 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
     width: 44,
   },
+
   summaryContent: {
     flex: 1,
   },
+
   summaryLabel: {
     color: colors.textSecondary,
     fontSize: 10,
   },
+
   summaryValue: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "800",
     marginTop: 2,
   },
+
   summaryStatus: {
     alignItems: "center",
     backgroundColor: "#EDF8F0",
@@ -612,6 +809,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
   },
+
   summaryDot: {
     backgroundColor: colors.success,
     borderRadius: radius.round,
@@ -619,6 +817,7 @@ const styles = StyleSheet.create({
     marginRight: 5,
     width: 6,
   },
+
   summaryStatusText: {
     color: colors.success,
     fontSize: 9,
@@ -638,6 +837,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     paddingHorizontal: spacing.md,
   },
+
   searchInput: {
     color: colors.text,
     flex: 1,
@@ -646,10 +846,12 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: 0,
   },
+
   filterContent: {
     gap: spacing.sm,
     paddingVertical: spacing.md,
   },
+
   filterChip: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -658,18 +860,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
   },
+
   filterChipSelected: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
+
   filterChipText: {
     color: colors.textSecondary,
     fontSize: 11,
     fontWeight: "700",
   },
+
   filterChipTextSelected: {
     color: colors.white,
   },
+
   errorBanner: {
     alignItems: "center",
     backgroundColor: "#FFF1F1",
@@ -680,6 +886,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     padding: spacing.md,
   },
+
   errorBannerText: {
     color: colors.danger,
     flex: 1,
@@ -687,6 +894,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginHorizontal: spacing.sm,
   },
+
   listHeading: {
     alignItems: "center",
     flexDirection: "row",
@@ -694,11 +902,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     marginTop: spacing.xs,
   },
+
   listTitle: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "800",
   },
+
   listCount: {
     color: colors.textSecondary,
     fontSize: 11,
@@ -715,30 +925,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     padding: spacing.lg,
   },
+
   reportHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",
   },
+
   reportHeaderContent: {
     flex: 1,
   },
+
   reportCode: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "800",
   },
+
   dateRow: {
     alignItems: "center",
     flexDirection: "row",
     marginTop: spacing.xs,
   },
+
   reportDate: {
     color: colors.textSecondary,
     fontSize: 11,
     marginLeft: 5,
   },
+
   badge: {
     alignItems: "center",
     borderRadius: radius.round,
@@ -748,24 +964,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
   },
+
   badgeText: {
     fontSize: 9,
     fontWeight: "800",
     textAlign: "center",
   },
+
   divider: {
     backgroundColor: colors.border,
     height: 1,
     marginVertical: spacing.md,
   },
+
   detailRow: {
     alignItems: "center",
     flexDirection: "row",
     marginBottom: spacing.md,
   },
+
   detailRowLast: {
     marginBottom: 0,
   },
+
   detailIcon: {
     alignItems: "center",
     backgroundColor: "#F2F6F9",
@@ -775,15 +996,18 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
     width: 36,
   },
+
   detailContent: {
     flex: 1,
   },
+
   detailLabel: {
     color: colors.textSecondary,
     fontSize: 9,
     fontWeight: "600",
     textTransform: "uppercase",
   },
+
   detailText: {
     color: colors.text,
     fontSize: 12,
@@ -791,6 +1015,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 2,
   },
+
+  /*
+   * Revision / rejected
+   */
   revisionNote: {
     alignItems: "flex-start",
     backgroundColor: "#FFF4F4",
@@ -801,20 +1029,54 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     padding: spacing.md,
   },
+
   revisionContent: {
     flex: 1,
     marginLeft: spacing.sm,
   },
+
   revisionLabel: {
     color: colors.danger,
     fontSize: 10,
     fontWeight: "800",
   },
+
   revisionText: {
     color: colors.textSecondary,
     fontSize: 11,
     lineHeight: 17,
     marginTop: 3,
+  },
+
+  /*
+   * PDF
+   */
+  pdfAction: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+  },
+
+  pdfButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+
+  pdfButtonDisabled: {
+    opacity: 0.7,
+  },
+
+  pdfButtonText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: spacing.sm,
   },
 
   /*
@@ -829,6 +1091,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxxl,
   },
+
   emptyIcon: {
     alignItems: "center",
     backgroundColor: colors.background,
@@ -837,12 +1100,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 72,
   },
+
   emptyTitle: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "800",
     marginTop: spacing.md,
   },
+
   emptyText: {
     color: colors.textSecondary,
     fontSize: 11,

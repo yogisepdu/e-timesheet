@@ -1,4 +1,8 @@
-import { apiRequest } from "./api";
+import { apiRequest, getAuthUser } from "./api";
+import {
+  getMasterDataCache,
+  saveMasterDataCache,
+} from "./offline/master-data-cache";
 
 export type ProductionUnit = "Meter" | "m³" | "Ha";
 
@@ -53,8 +57,33 @@ type MasterDataResponse = {
   data: MasterData;
 };
 
-export async function getMasterData() {
-  const response = await apiRequest<MasterDataResponse>("/master-data");
+export async function getMasterData(): Promise<MasterData> {
+  const user = await getAuthUser();
 
-  return response.data;
+  if (!user) {
+    throw new Error("User belum login. Tidak dapat mengambil master data.");
+  }
+
+  try {
+    const response = await apiRequest<MasterDataResponse>("/master-data");
+
+    const masterData = response.data;
+
+    await saveMasterDataCache(user.id, masterData);
+
+    return masterData;
+  } catch (error) {
+    console.warn(
+      "Gagal mengambil master data dari server. Mencoba cache lokal...",
+      error,
+    );
+
+    const cachedData = await getMasterDataCache(user.id);
+
+    if (cachedData) {
+      return cachedData;
+    }
+
+    throw error;
+  }
 }

@@ -1,21 +1,23 @@
-import { apiRequest, removeToken, saveToken } from "./api";
+import {
+  apiRequest,
+  clearAuthSession,
+  ensureAuthSessionValid,
+  getAuthUser,
+  isAuthSessionValid,
+  saveAuthSession,
+  saveAuthUser,
+  type AuthUser,
+} from "./api";
 
-export type AuthUser = {
-  id: number;
-  name: string;
-  username: string;
-  email: string | null;
-  role: string;
-  position: string | null;
-  phone: string | null;
-  is_active: boolean;
-  last_login_at: string | null;
-};
+export type { AuthUser };
 
 type LoginResponse = {
   message: string;
   token_type: string;
   token: string;
+  expires_at: string;
+  logged_in_at: string;
+  expires_in_hours: number;
   user: AuthUser;
 };
 
@@ -27,7 +29,20 @@ type LogoutResponse = {
   message: string;
 };
 
-export async function login(username: string, password: string) {
+/**
+ * Login user ke API Laravel.
+ *
+ * Session yang berhasil dibuat akan disimpan secara lokal:
+ * - token
+ * - expires_at
+ * - user
+ *
+ * Password tidak pernah disimpan.
+ */
+export async function login(
+  username: string,
+  password: string,
+): Promise<LoginResponse> {
   const response = await apiRequest<LoginResponse>("/login", {
     method: "POST",
 
@@ -38,27 +53,77 @@ export async function login(username: string, password: string) {
     }),
   });
 
-  await saveToken(response.token);
+  await saveAuthSession({
+    token: response.token,
+    expiresAt: response.expires_at,
+    user: response.user,
+  });
 
   return response;
 }
 
-export async function getAuthenticatedUser() {
+/**
+ * Mengambil user terbaru dari server.
+ */
+export async function getAuthenticatedUser(): Promise<AuthUser> {
+  const sessionValid = await ensureAuthSessionValid();
+
+  if (!sessionValid) {
+    throw new Error("Sesi login telah berakhir. Silakan login kembali.");
+  }
+
   const response = await apiRequest<MeResponse>("/me");
+
+  /*
+  | Server adalah sumber data user terbaru.
+  */
+  await saveAuthUser(response.data);
 
   return response.data;
 }
 
-export async function logout() {
+/**
+ * Mengambil user dari session lokal.
+ *
+ * Fungsi ini dapat digunakan ketika offline.
+ */
+export async function getLocalAuthenticatedUser(): Promise<AuthUser | null> {
+  const valid = await isAuthSessionValid();
+
+  if (!valid) {
+    await clearAuthSession();
+
+    return null;
+  }
+
+  return getAuthUser();
+}
+
+/**
+ * Mengecek apakah session login masih berlaku.
+ */
+export async function hasValidSession(): Promise<boolean> {
+  return isAuthSessionValid();
+}
+
+/**
+ * Logout.
+ *
+ * Server dihubungi jika session masih valid.
+ * Session lokal tetap dihapus walaupun server gagal merespons.
+ */
+export async function logout(): Promise<void> {
   try {
-    await apiRequest<LogoutResponse>("/logout", {
-      method: "POST",
-    });
+    const sessionValid = await isAuthSessionValid();
+
+    if (sessionValid) {
+      await apiRequest<LogoutResponse>("/logout", {
+        method: "POST",
+      });
+    }
+  } catch (error) {
+    console.warn("Logout server gagal:", error);
   } finally {
-    /**
-     * Walaupun server gagal merespons,
-     * token lokal tetap dihapus.
-     */
-    await removeToken();
+    await clearAuthSession();
   }
 }

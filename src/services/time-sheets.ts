@@ -1,4 +1,6 @@
-import { apiRequest } from "./api";
+import * as FileSystem from "expo-file-system/legacy";
+
+import { API_BASE_URL, ApiError, apiRequest, getToken } from "./api";
 
 export type TimeSheetStatus =
   | "draft"
@@ -77,12 +79,18 @@ type SaveTimeSheetResponse = {
   data: SavedTimeSheet;
 };
 
+/**
+ * Mengambil seluruh riwayat Time Sheet milik user yang sedang login.
+ */
 export async function getTimeSheetHistory() {
   const response = await apiRequest<TimeSheetHistoryResponse>("/time-sheets");
 
   return response.data;
 }
 
+/**
+ * Membuat Time Sheet sebagai draft.
+ */
 export async function createTimeSheetDraft(payload: TimeSheetSavePayload) {
   return apiRequest<SaveTimeSheetResponse>("/time-sheets/draft", {
     method: "POST",
@@ -90,6 +98,9 @@ export async function createTimeSheetDraft(payload: TimeSheetSavePayload) {
   });
 }
 
+/**
+ * Mengubah Time Sheet draft.
+ */
 export async function updateTimeSheetDraft(
   timeSheetId: number,
   payload: TimeSheetSavePayload,
@@ -103,6 +114,9 @@ export async function updateTimeSheetDraft(
   );
 }
 
+/**
+ * Membuat Time Sheet dan langsung submit.
+ */
 export async function createAndSubmitTimeSheet(payload: TimeSheetSavePayload) {
   return apiRequest<SaveTimeSheetResponse>("/time-sheets/submit", {
     method: "POST",
@@ -110,6 +124,9 @@ export async function createAndSubmitTimeSheet(payload: TimeSheetSavePayload) {
   });
 }
 
+/**
+ * Submit Time Sheet draft.
+ */
 export async function submitTimeSheetDraft(
   timeSheetId: number,
   payload: TimeSheetSavePayload,
@@ -121,4 +138,85 @@ export async function submitTimeSheetDraft(
       body: JSON.stringify(payload),
     },
   );
+}
+
+/**
+ * Download PDF Time Sheet dari Laravel.
+ *
+ * PDF dibuat oleh Laravel menggunakan view PDF yang sama
+ * dengan Admin Dashboard.
+ *
+ * Hasil download disimpan ke cache directory aplikasi.
+ */
+export async function downloadTimeSheetPdf(
+  timeSheetId: number,
+  timeSheetCode: string,
+): Promise<string> {
+  const token = await getToken();
+
+  if (!token) {
+    throw new ApiError(
+      "Sesi login tidak ditemukan. Silakan login kembali.",
+      401,
+    );
+  }
+
+  const safeFileName = sanitizeFileName(timeSheetCode);
+
+  const fileUri = `${FileSystem.cacheDirectory}${safeFileName}.pdf`;
+
+  const endpoint = `${API_BASE_URL}/time-sheets/${timeSheetId}/pdf`;
+
+  try {
+    const result = await FileSystem.downloadAsync(endpoint, fileUri, {
+      headers: {
+        Accept: "application/pdf",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!result || !result.uri) {
+      throw new ApiError("File PDF tidak berhasil diunduh.", 500);
+    }
+
+    if (result.status === 401) {
+      throw new ApiError(
+        "Sesi login telah berakhir. Silakan login kembali.",
+        401,
+      );
+    }
+
+    if (result.status < 200 || result.status >= 300) {
+      throw new ApiError(
+        `Gagal mengunduh PDF (${result.status}).`,
+        result.status,
+      );
+    }
+
+    return result.uri;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    console.warn("Gagal download PDF Time Sheet:", error);
+
+    throw new ApiError(
+      "PDF tidak dapat diunduh. Periksa koneksi internet dan coba lagi.",
+      0,
+    );
+  }
+}
+
+/**
+ * Membersihkan kode Time Sheet agar aman digunakan
+ * sebagai nama file.
+ */
+function sanitizeFileName(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, "-");
+
+  return sanitized || "time-sheet";
 }

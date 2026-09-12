@@ -1,48 +1,46 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { ComponentProps } from "react";
-import { useState } from "react";
 import {
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TextInputProps,
+  TouchableOpacity,
   View,
 } from "react-native";
 
 import { colors, radius, spacing } from "../constants/theme";
 
-type IconName = ComponentProps<typeof Ionicons>["name"];
-
-type AppInputProps = TextInputProps & {
+type AppInputProps = {
+  icon?: keyof typeof Ionicons.glyphMap;
   label: string;
-  icon?: IconName;
-  error?: string;
-  isPassword?: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  secureTextEntry?: boolean;
+  keyboardType?: "default" | "email-address" | "numeric" | "phone-pad";
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  editable?: boolean;
+  rightIcon?: keyof typeof Ionicons.glyphMap;
+  onRightIconPress?: () => void;
 };
 
 export function AppInput({
-  label,
   icon,
-  error,
-  isPassword = false,
-  multiline = false,
-  style,
-  ...props
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  secureTextEntry = false,
+  keyboardType = "default",
+  autoCapitalize = "none",
+  editable = true,
+  rightIcon,
+  onRightIconPress,
 }: AppInputProps) {
-  const [showPassword, setShowPassword] = useState(false);
-
   return (
-    <View style={styles.wrapper}>
+    <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
 
-      <View
-        style={[
-          styles.inputContainer,
-          multiline && styles.multilineContainer,
-          error ? styles.inputError : null,
-        ]}
-      >
+      <View style={styles.inputContainer}>
         {icon ? (
           <Ionicons
             name={icon}
@@ -53,79 +51,88 @@ export function AppInput({
         ) : null}
 
         <TextInput
-          {...props}
-          multiline={multiline}
+          autoCapitalize={autoCapitalize}
+          editable={editable}
+          keyboardType={keyboardType}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
           placeholderTextColor={colors.textLight}
-          secureTextEntry={isPassword && !showPassword}
-          style={[styles.input, multiline && styles.multilineInput, style]}
+          secureTextEntry={secureTextEntry}
+          style={[
+            styles.input,
+            icon ? styles.inputWithLeftIcon : undefined,
+            rightIcon ? styles.inputWithRightIcon : undefined,
+          ]}
+          value={value}
         />
 
-        {isPassword ? (
-          <Pressable
+        {rightIcon && onRightIconPress ? (
+          <TouchableOpacity
+            accessibilityLabel={
+              rightIcon === "eye-outline"
+                ? "Tampilkan password"
+                : "Sembunyikan password"
+            }
+            accessibilityRole="button"
             hitSlop={10}
-            onPress={() => setShowPassword((previous) => !previous)}
+            onPress={onRightIconPress}
+            style={styles.rightButton}
           >
-            <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
-              size={21}
-              color={colors.textSecondary}
-            />
-          </Pressable>
+            <Ionicons name={rightIcon} size={21} color={colors.textSecondary} />
+          </TouchableOpacity>
         ) : null}
       </View>
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
+  container: {
     marginBottom: spacing.lg,
   },
+
   label: {
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: spacing.sm,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
   },
+
   inputContainer: {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
     minHeight: 52,
-    paddingHorizontal: spacing.md,
   },
-  multilineContainer: {
-    alignItems: "flex-start",
-    minHeight: 110,
-    paddingTop: spacing.md,
+
+  leftIcon: {
+    marginLeft: spacing.md,
   },
+
   input: {
     color: colors.text,
     flex: 1,
     fontSize: 15,
-    minHeight: 50,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
-  multilineInput: {
-    minHeight: 85,
-    paddingTop: 0,
-    textAlignVertical: "top",
+
+  inputWithLeftIcon: {
+    paddingLeft: spacing.sm,
   },
-  leftIcon: {
-    marginRight: 2,
+
+  inputWithRightIcon: {
+    paddingRight: spacing.sm,
   },
-  inputError: {
-    borderColor: colors.danger,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginTop: spacing.xs,
+
+  rightButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.md,
+    minHeight: 44,
+    minWidth: 32,
   },
 });

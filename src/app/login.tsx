@@ -27,6 +27,7 @@ export default function LoginScreen() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -68,12 +69,16 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
         style={styles.flex}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === "ios" ? "interactive" : "on-drag"
+          }
         >
           <View style={styles.header}>
             <View style={styles.logoContainer}>
@@ -122,7 +127,11 @@ export default function LoginScreen() {
                 }
               }}
               placeholder="Masukkan password"
-              secureTextEntry
+              rightIcon={showPassword ? "eye-off-outline" : "eye-outline"}
+              onRightIconPress={() => {
+                setShowPassword((current) => !current);
+              }}
+              secureTextEntry={!showPassword}
               value={password}
             />
 
@@ -176,7 +185,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flexGrow: 1,
     justifyContent: "center",
-    padding: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+    paddingBottom: spacing.xxl * 2,
   },
   header: {
     alignItems: "center",
