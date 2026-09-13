@@ -1,87 +1,168 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import type { ComponentProps } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { colors, radius, spacing } from "../constants/theme";
 
-type AppInputProps = {
-  icon?: keyof typeof Ionicons.glyphMap;
+type IoniconName = ComponentProps<typeof Ionicons>["name"];
+
+export type AppInputProps = {
+  icon?: IoniconName;
   label: string;
-  value: string;
-  onChangeText: (value: string) => void;
   placeholder?: string;
-  secureTextEntry?: boolean;
-  keyboardType?: "default" | "email-address" | "numeric" | "phone-pad";
-  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  value: string;
+
+  /**
+   * Optional karena beberapa input digunakan
+   * hanya untuk menampilkan data yang tidak dapat diedit.
+   */
+  onChangeText?: (value: string) => void;
+
   editable?: boolean;
-  rightIcon?: keyof typeof Ionicons.glyphMap;
+  secureTextEntry?: boolean;
+
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoCorrect?: boolean;
+
+  keyboardType?:
+    | "default"
+    | "email-address"
+    | "numeric"
+    | "phone-pad"
+    | "decimal-pad";
+
+  error?: string;
+
+  rightIcon?: IoniconName;
   onRightIconPress?: () => void;
+
+  multiline?: boolean;
+  numberOfLines?: number;
+
+  maxLength?: number;
+
+  returnKeyType?: "done" | "go" | "next" | "search" | "send" | "default";
+
+  onSubmitEditing?: () => void;
+
+  textContentType?:
+    | "none"
+    | "username"
+    | "password"
+    | "emailAddress"
+    | "telephoneNumber";
+
+  accessibilityLabel?: string;
 };
 
 export function AppInput({
   icon,
   label,
+  placeholder,
   value,
   onChangeText,
-  placeholder,
-  secureTextEntry = false,
-  keyboardType = "default",
-  autoCapitalize = "none",
   editable = true,
+  secureTextEntry = false,
+  autoCapitalize = "none",
+  autoCorrect = false,
+  keyboardType = "default",
+  error,
   rightIcon,
   onRightIconPress,
+  multiline = false,
+  numberOfLines = 1,
+  maxLength,
+  returnKeyType,
+  onSubmitEditing,
+  textContentType,
+  accessibilityLabel,
 }: AppInputProps) {
+  const isDisabled = editable === false;
+  const hasError = Boolean(error);
+
   return (
     <View style={styles.container}>
+      {/* Label */}
       <Text style={styles.label}>{label}</Text>
 
-      <View style={styles.inputContainer}>
+      {/* Input */}
+      <View
+        style={[
+          styles.inputContainer,
+          isDisabled ? styles.inputContainerDisabled : null,
+          hasError ? styles.inputContainerError : null,
+          multiline ? styles.inputContainerMultiline : null,
+        ]}
+      >
+        {/* Left Icon */}
         {icon ? (
           <Ionicons
+            color={
+              hasError
+                ? colors.danger
+                : isDisabled
+                  ? colors.textLight
+                  : colors.textSecondary
+            }
             name={icon}
             size={20}
-            color={colors.textSecondary}
             style={styles.leftIcon}
           />
         ) : null}
 
+        {/* Text Input */}
         <TextInput
+          accessibilityLabel={accessibilityLabel ?? label}
           autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
           editable={editable}
           keyboardType={keyboardType}
+          maxLength={maxLength}
+          multiline={multiline}
+          numberOfLines={numberOfLines}
           onChangeText={onChangeText}
+          onSubmitEditing={onSubmitEditing}
           placeholder={placeholder}
           placeholderTextColor={colors.textLight}
+          returnKeyType={returnKeyType}
           secureTextEntry={secureTextEntry}
-          style={[
-            styles.input,
-            icon ? styles.inputWithLeftIcon : undefined,
-            rightIcon ? styles.inputWithRightIcon : undefined,
-          ]}
+          style={[styles.input, multiline ? styles.inputMultiline : null]}
+          textContentType={textContentType}
           value={value}
         />
 
+        {/* Right Icon */}
         {rightIcon && onRightIconPress ? (
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel={
-              rightIcon === "eye-outline"
-                ? "Tampilkan password"
-                : "Sembunyikan password"
+              secureTextEntry ? "Tampilkan password" : "Sembunyikan password"
             }
             accessibilityRole="button"
             hitSlop={10}
             onPress={onRightIconPress}
             style={styles.rightButton}
           >
-            <Ionicons name={rightIcon} size={21} color={colors.textSecondary} />
-          </TouchableOpacity>
+            <Ionicons
+              color={isDisabled ? colors.textLight : colors.textSecondary}
+              name={rightIcon}
+              size={20}
+            />
+          </Pressable>
         ) : null}
       </View>
+
+      {/* Error */}
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons
+            color={colors.danger}
+            name="alert-circle-outline"
+            size={15}
+          />
+
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -89,13 +170,14 @@ export function AppInput({
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.lg,
+    width: "100%",
   },
 
   label: {
     color: colors.text,
     fontSize: 13,
     fontWeight: "700",
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
 
   inputContainer: {
@@ -105,34 +187,61 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 52,
+    minHeight: 50,
+    paddingHorizontal: spacing.md,
+  },
+
+  inputContainerDisabled: {
+    backgroundColor: "#F5F7F9",
+    opacity: 0.85,
+  },
+
+  inputContainerError: {
+    borderColor: colors.danger,
+  },
+
+  inputContainerMultiline: {
+    alignItems: "flex-start",
+    minHeight: 100,
   },
 
   leftIcon: {
-    marginLeft: spacing.md,
+    marginRight: spacing.sm,
   },
 
   input: {
     color: colors.text,
     flex: 1,
-    fontSize: 15,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    fontSize: 14,
+    minHeight: 48,
+    paddingHorizontal: 0,
+    paddingVertical: spacing.sm,
   },
 
-  inputWithLeftIcon: {
-    paddingLeft: spacing.sm,
-  },
-
-  inputWithRightIcon: {
-    paddingRight: spacing.sm,
+  inputMultiline: {
+    minHeight: 90,
+    textAlignVertical: "top",
   },
 
   rightButton: {
     alignItems: "center",
     justifyContent: "center",
-    marginRight: spacing.md,
-    minHeight: 44,
+    marginLeft: spacing.sm,
+    minHeight: 40,
     minWidth: 32,
+  },
+
+  errorContainer: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginTop: spacing.xs,
+  },
+
+  errorText: {
+    color: colors.danger,
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    marginLeft: spacing.xs,
   },
 });

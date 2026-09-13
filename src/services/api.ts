@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-export const API_BASE_URL = "http://10.232.140.114:8000/api";
+export const API_BASE_URL = "https://ruangdev.web-id.id/api";
 
 const TOKEN_KEY = "etimesheet_auth_token";
 const EXPIRES_AT_KEY = "etimesheet_auth_expires_at";

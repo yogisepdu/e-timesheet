@@ -3,6 +3,7 @@ import type { Href } from "expo-router";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -22,11 +23,9 @@ import { login } from "../services/auth";
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [formError, setFormError] = useState("");
-  const [loading, setLoading] = useState(false);
-
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -36,13 +35,11 @@ export default function LoginScreen() {
 
     if (!normalizedUsername) {
       setErrorMessage("Username wajib diisi.");
-
       return;
     }
 
     if (!password) {
       setErrorMessage("Password wajib diisi.");
-
       return;
     }
 
@@ -54,9 +51,10 @@ export default function LoginScreen() {
 
       router.replace("/(tabs)" as Href);
     } catch (error) {
+      console.warn("Login gagal:", error);
+
       if (error instanceof ApiError) {
         setErrorMessage(error.message);
-
         return;
       }
 
@@ -79,94 +77,117 @@ export default function LoginScreen() {
           keyboardDismissMode={
             Platform.OS === "ios" ? "interactive" : "on-drag"
           }
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Ionicons
-                name="construct-outline"
-                size={48}
-                color={colors.secondary}
+          <View style={styles.container}>
+            {/* =========================
+                HEADER / LOGO
+                ========================= */}
+
+            <View style={styles.header}>
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require("@/assets/images/logo.png")}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Text style={styles.appName}>e-Time Sheet</Text>
+
+              <Text style={styles.subtitle}>
+                Laporan Pemakaian Alat Digital
+              </Text>
+            </View>
+
+            {/* =========================
+                LOGIN CARD
+                ========================= */}
+
+            <View style={styles.card}>
+              <Text style={styles.title}>Selamat Datang</Text>
+
+              <Text style={styles.description}>
+                Masuk menggunakan akun pengawas untuk membuat dan memantau
+                laporan pemakaian alat.
+              </Text>
+
+              {/* Username */}
+
+              <AppInput
+                icon="person-outline"
+                label="Username"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+                onChangeText={(value) => {
+                  setUsername(value);
+
+                  if (errorMessage) {
+                    setErrorMessage("");
+                  }
+                }}
+                placeholder="Masukkan username"
+                value={username}
+              />
+
+              {/* Password */}
+
+              <AppInput
+                icon="lock-closed-outline"
+                label="Password"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+                onChangeText={(value) => {
+                  setPassword(value);
+
+                  if (errorMessage) {
+                    setErrorMessage("");
+                  }
+                }}
+                placeholder="Masukkan password"
+                rightIcon={showPassword ? "eye-off-outline" : "eye-outline"}
+                onRightIconPress={() => {
+                  setShowPassword((current) => !current);
+                }}
+                secureTextEntry={!showPassword}
+                value={password}
+              />
+
+              {/* Error Message */}
+
+              {errorMessage ? (
+                <View style={styles.errorCard}>
+                  <Ionicons
+                    color={colors.danger}
+                    name="alert-circle-outline"
+                    size={20}
+                  />
+
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
+              {/* Login Button */}
+
+              <AppButton
+                icon="log-in-outline"
+                onPress={handleLogin}
+                title={isLoading ? "Memproses..." : "Masuk"}
               />
             </View>
 
-            <Text style={styles.appName}>e-Time Sheet</Text>
+            {/* =========================
+                FOOTER / COPYRIGHT
+                ========================= */}
 
-            <Text style={styles.subtitle}>Laporan Pemakaian Alat Digital</Text>
+            <View style={styles.footerContainer}>
+              <Text style={styles.footer}>© 2026 RuangDev - Yosep</Text>
+
+              <Text style={styles.footerAppName}>e-Time Sheet</Text>
+            </View>
           </View>
-
-          <View style={styles.card}>
-            <Text style={styles.title}>Selamat Datang</Text>
-
-            <Text style={styles.description}>
-              Masuk menggunakan akun pengawas untuk membuat dan memantau laporan
-              pemakaian alat.
-            </Text>
-
-            <AppInput
-              icon="person-outline"
-              label="Username"
-              onChangeText={(value) => {
-                setUsername(value);
-
-                if (errorMessage) {
-                  setErrorMessage("");
-                }
-              }}
-              placeholder="Masukkan username"
-              value={username}
-            />
-
-            <AppInput
-              icon="lock-closed-outline"
-              label="Password"
-              onChangeText={(value) => {
-                setPassword(value);
-
-                if (errorMessage) {
-                  setErrorMessage("");
-                }
-              }}
-              placeholder="Masukkan password"
-              rightIcon={showPassword ? "eye-off-outline" : "eye-outline"}
-              onRightIconPress={() => {
-                setShowPassword((current) => !current);
-              }}
-              secureTextEntry={!showPassword}
-              value={password}
-            />
-
-            {errorMessage ? (
-              <View style={styles.errorCard}>
-                <Ionicons
-                  color={colors.danger}
-                  name="alert-circle-outline"
-                  size={20}
-                />
-
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            {formError ? (
-              <View style={styles.errorContainer}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={18}
-                  color={colors.danger}
-                />
-
-                <Text style={styles.errorText}>{formError}</Text>
-              </View>
-            ) : null}
-
-            <AppButton
-              icon="log-in-outline"
-              onPress={handleLogin}
-              title={isLoading ? "Memproses..." : "Masuk"}
-            />
-          </View>
-
-          <Text style={styles.footer}>Aplikasi e-Time Sheet Alat</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -174,13 +195,19 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  /* =========================
+     SCREEN
+     ========================= */
+
   safeArea: {
     backgroundColor: colors.background,
     flex: 1,
   },
+
   flex: {
     flex: 1,
   },
+
   scrollContent: {
     backgroundColor: colors.background,
     flexGrow: 1,
@@ -189,10 +216,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     paddingBottom: spacing.xxl * 2,
   },
+
+  container: {
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 520,
+  },
+
+  /* =========================
+     HEADER
+     ========================= */
+
   header: {
     alignItems: "center",
     marginBottom: spacing.xxl,
   },
+
   logoContainer: {
     alignItems: "center",
     backgroundColor: "#EAF0F5",
@@ -202,18 +241,69 @@ const styles = StyleSheet.create({
     height: 94,
     justifyContent: "center",
     marginBottom: spacing.lg,
+    overflow: "hidden",
     width: 94,
   },
+
+  logo: {
+    height: 78,
+    width: 78,
+  },
+
   appName: {
     color: colors.primary,
     fontSize: 30,
     fontWeight: "800",
+    textAlign: "center",
   },
+
   subtitle: {
     color: colors.textSecondary,
     fontSize: 14,
     marginTop: spacing.xs,
+    textAlign: "center",
   },
+
+  /* =========================
+     LOGIN CARD
+     ========================= */
+
+  card: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: spacing.xxl,
+
+    elevation: 3,
+
+    shadowColor: colors.black,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+
+  title: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "800",
+  },
+
+  description: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: spacing.xxl,
+    marginTop: spacing.sm,
+  },
+
+  /* =========================
+     ERROR
+     ========================= */
+
   errorCard: {
     alignItems: "center",
     backgroundColor: "#FFF1F1",
@@ -232,64 +322,29 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginLeft: spacing.sm,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    padding: spacing.xxl,
 
-    elevation: 3,
+  /* =========================
+     FOOTER
+     ========================= */
 
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  description: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: spacing.xxl,
-    marginTop: spacing.sm,
-  },
-  errorContainer: {
+  footerContainer: {
     alignItems: "center",
-    backgroundColor: "#FDECEC",
-    borderRadius: radius.md,
-    flexDirection: "row",
-    marginBottom: spacing.lg,
-    padding: spacing.md,
+    marginTop: spacing.xxl,
+    paddingBottom: spacing.md,
   },
-  demoContainer: {
-    alignItems: "center",
-    backgroundColor: "#F5F7FA",
-    borderRadius: radius.md,
-    marginTop: spacing.lg,
-    padding: spacing.md,
-  },
-  demoTitle: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  demoText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
+
   footer: {
     color: colors.textLight,
     fontSize: 12,
-    marginTop: spacing.xxl,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  footerAppName: {
+    color: colors.textLight,
+    fontSize: 10,
+    marginTop: spacing.xs,
+    opacity: 0.7,
     textAlign: "center",
   },
 });
