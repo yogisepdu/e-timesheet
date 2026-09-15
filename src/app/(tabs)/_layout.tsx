@@ -2,7 +2,6 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
 import type { ColorValue } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../../constants/theme";
 
@@ -13,8 +12,6 @@ function TabIcon({ color, name }: { color: ColorValue; name: IconName }) {
 }
 
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets();
-
   return (
     <Tabs
       screenOptions={{
@@ -33,8 +30,8 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.border,
-          height: 68 + insets.bottom,
-          paddingBottom: Math.max(insets.bottom, 8),
+          height: 68,
+          paddingBottom: 8,
           paddingTop: 7,
         },
       }}
@@ -43,7 +40,6 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Beranda",
-
           tabBarIcon: ({ color }) => (
             <TabIcon color={color} name="home-outline" />
           ),
@@ -54,7 +50,6 @@ export default function TabsLayout() {
         name="timesheet"
         options={{
           title: "Time Sheet",
-
           tabBarIcon: ({ color }) => (
             <TabIcon color={color} name="document-text-outline" />
           ),
@@ -65,7 +60,6 @@ export default function TabsLayout() {
         name="history"
         options={{
           title: "Riwayat",
-
           tabBarIcon: ({ color }) => (
             <TabIcon color={color} name="time-outline" />
           ),
@@ -76,7 +70,6 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profil",
-
           tabBarIcon: ({ color }) => (
             <TabIcon color={color} name="person-outline" />
           ),

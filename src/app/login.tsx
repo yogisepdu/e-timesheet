@@ -46,10 +46,11 @@ export default function LoginScreen() {
     try {
       setIsLoading(true);
       setErrorMessage("");
-
       await login(normalizedUsername, password);
 
-      router.replace("/(tabs)" as Href);
+      requestAnimationFrame(() => {
+        router.replace("/(tabs)" as Href);
+      });
     } catch (error) {
       console.warn("Login gagal:", error);
 
