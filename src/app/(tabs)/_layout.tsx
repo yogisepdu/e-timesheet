@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
 import type { ColorValue } from "react-native";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../constants/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -30,8 +31,8 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.border,
-          height: 68,
-          paddingBottom: 8,
+          height: 68 + useSafeAreaInsets().bottom,
+          paddingBottom: Math.max(useSafeAreaInsets().bottom, 8),
           paddingTop: 7,
         },
       }}
